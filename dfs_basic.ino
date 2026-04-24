@@ -516,24 +516,61 @@ bool canUseCentering(float leftDist, float frontDist, float rightDist) {
 // =========================================================
 // 道路居中
 // =========================================================
-void keepLaneCenteredAndGo(float leftDist, float rightDist) {
   if (leftDist < 0 || rightDist < 0) {
-    Serial.println("Center fallback: invalid side reading");
+    Serial.println("Center fallback: invalid side reading, go straight");
     driveStraightStep(CAREFUL_SPEED, CENTER_MOVE_STEP_MS);
     return;
   }
 
   float error = leftDist - rightDist;
+  float totalWidth = leftDist + rightDist;
 
   int correction = 0;
 
-  if (abs(error) > CENTER_TOLERANCE_CM) {
-    correction = (int)(KP * error);
-    correction = constrain(correction, -MAX_CORRECTION, MAX_CORRECTION);
+  // =====================================================
+  // 情况 1：正常窄走廊
+  // 用左右距离差做居中。
+  // =====================================================
+  if (totalWidth < 17.0) {
+    if (abs(error) <= CENTER_TOLERANCE_CM) {
+      correction = 0;
+    } 
+    else {
+      correction = (int)(KP * error);
+      correction = constrain(correction, -MAX_CORRECTION, MAX_CORRECTION);
+    }
   }
 
-  // correction > 0：往左修
-  // correction < 0：往右修
+  // =====================================================
+  // 情况 2：左墙更近
+  // 不强行追求左右相等，只保证左边别太近。
+  // 左墙太近时，小车应该往右修。
+  // correction < 0 表示往右修。
+  // =====================================================
+  else if (leftDist < rightDist) {
+    float wallError = leftDist-TARGET_WALL_DIST_CM ;
+
+    if (wallError > 0) {
+      correction = (int)(KP * wallError);
+      correction = constrain(correction, -MAX_CORRECTION, MAX_CORRECTION);
+    }
+  }
+
+  // =====================================================
+  // 情况 3：右墙更近
+  // 右墙太近时，小车应该往左修。
+  // correction > 0 表示往左修。
+  // =====================================================
+  else if (rightDist < leftDist) {
+    float wallError = rightDist-TARGET_WALL_DIST_CM;
+
+    if (wallError > 0) {
+      correction = (int)(KP * wallError);
+      correction = constrain(correction, -MAX_CORRECTION, MAX_CORRECTION);
+    }
+  }
+
+  // 根据 correction 计算左右轮速度。
   int leftSpeed  = FORWARD_SPEED - correction;
   int rightSpeed = FORWARD_SPEED + correction;
 
@@ -542,10 +579,16 @@ void keepLaneCenteredAndGo(float leftDist, float rightDist) {
 
   Serial.print("Center | left=");
   Serial.print(leftDist);
-  Serial.print(" right=");
+  Serial.print(" cm, right=");
   Serial.print(rightDist);
-  Serial.print(" correction=");
-  Serial.println(correction);
+  Serial.print(" cm, error=");
+  Serial.print(error);
+  Serial.print(", correction=");
+  Serial.print(correction);
+  Serial.print(", leftSpeed=");
+  Serial.print(leftSpeed);
+  Serial.print(", rightSpeed=");
+  Serial.println(rightSpeed);
 
   setMotorSpeeds(rightSpeed, leftSpeed);
   delay(CENTER_MOVE_STEP_MS);
@@ -553,7 +596,6 @@ void keepLaneCenteredAndGo(float leftDist, float rightDist) {
   stopMotors();
   delay(PAUSE_TIME_MS);
 }
-
 
 // =========================================================
 // DFS 节点栈函数
